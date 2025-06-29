@@ -4,11 +4,16 @@ import time
 from dotenv import load_dotenv
 from influxdb_client_3 import InfluxDBClient3, Point
 from confluent_kafka import Consumer, KafkaError
+from datetime import datetime, timezone, timedelta # 引入 datetime 和 timedelta
+from zoneinfo import ZoneInfo # 引入 zoneinfo 模組
 
-# 設定批次大小，每 5000 筆資料寫入一次 InfluxDB
-BATCH_SIZE = 5_000
+# 設定批次大小，每 10,000 筆資料寫入一次 InfluxDB
+BATCH_SIZE = 10_000
 # 連續多少次 poll() 沒有訊息才視為結束
 MAX_NO_MESSAGE_STREAK = 5
+
+# 定義台灣時區
+TAIWAN_TZ = ZoneInfo('Asia/Taipei')
 
 def main():
     # --- 1. 從 .env 檔案載入設定 ---
@@ -83,19 +88,45 @@ def main():
                 point = Point("txf_tick")
                 for key, value in record.items():
                     if key == 'datetime':
-                        point.time(value)
+                        dt_obj = None
+                        if isinstance(value, str):
+                            # 嘗試解析帶時區的 ISO 格式 (e.g., '2025-06-28T04:59:59.349000+08:00')
+                            try:
+                                dt_obj = datetime.fromisoformat(value)
+                            except ValueError:
+                                # 如果解析失敗，表示是沒有時區的格式，手動設定為台灣時區
+                                # 假設沒有時區的字串格式是 'YYYY-MM-DDTHH:MM:SS.ffffff'
+                                try:
+                                    dt_obj = datetime.strptime(value, '%Y-%m-%dT%H:%M:%S.%f')
+                                    # 將無時區的 datetime 物件「標記」為台灣時區
+                                    # 注意：.replace(tzinfo=...) 不會處理時區轉換，只會添加時區資訊
+                                    # 它假設這個naive datetime已經是該時區的時間
+                                    dt_obj = dt_obj.replace(tzinfo=TAIWAN_TZ) 
+                                    
+                                    # 確保最終是UTC時間 (InfluxDB 內部儲存需求)
+                                    # 如果原始無時區數據是台灣時間，它就是 dt_obj - timedelta(hours=8)
+                                    # 但因為replace(tzinfo)會處理偏移量，dt_obj現在就是帶時區的台灣時間
+                                    # InfluxDB客戶端會自動將帶時區的datetime轉換為UTC
+                                except ValueError:
+                                    print(f"警告: 無法解析 datetime 格式: {value}, 跳過此欄位。")
+                                    continue # 跳過此 datetime 欄位，不設定時間
+                        elif isinstance(value, (int, float)):
+                            # 如果是 Unix timestamp，Point.time() 應該可以直接處理
+                            # 你的範例是 ISO 格式字串，這部分可能用不到
+                            pass 
+                        
+                        if dt_obj:
+                            point.time(dt_obj) # 傳遞帶有時區資訊的 datetime 物件
                     elif isinstance(value, (int, float)):
                         point.field(key, value)
-                    # 您也可以根據需要將某些欄位設定為 tag 來加速查詢
-                    # 例如，我們可以將 'tick_type' 和 'code' 設為 tag
                     elif key in ['tick_type', 'code', 'simtrade']:
                          point.tag(key, str(value))
 
                 point_batch.append(point)
                 message_count += 1
                 
-                # 每1000筆印一次日誌，讓你知道程式在動
-                if message_count % 1000 == 0:
+                # 每2,000筆印一次日誌，讓你知道程式在動
+                if message_count % 2000 == 0:
                     print(f"已處理 {message_count} 筆訊息...")
 
                 if len(point_batch) >= BATCH_SIZE:
@@ -131,3 +162,5 @@ if __name__ == "__main__":
     main()
 
 
+# 直接在Terminal 上檢查資料庫的指令：
+# influxdb3 query "SELECT * FROM txf_tick WHERE time >= '2025-06-27T08:45:00+08:00' AND time < '2025-06-27T13:45:05+08:00' ORDER BY time ASC LIMIT 100" --database "txf-ticks" | less -SC
