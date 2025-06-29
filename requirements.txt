@@ -1,2 +1,7 @@
 fastapi
 uvicorn
+# --- 新增給批次匯入腳本的套件 ---
+influxdb3-python
+confluent-kafka
+python-dotenv
+orjson

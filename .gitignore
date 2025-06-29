@@ -1,0 +1,14 @@
+# 忽略存放敏感金鑰和設定的 .env 檔案
+.env
+
+# 忽略 Python 產生的快取和編譯檔案
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 忽略 VS Code 的設定檔
+.vscode/
+
+# 忽略開發容器的設定檔 (可選，但建議)
+.devcontainer/
