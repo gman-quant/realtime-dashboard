@@ -16,7 +16,7 @@
 	// "forwardPorts": [],
 
 	// Uncomment the next line to run commands after the container is created.
-	// "postCreateCommand": "cat /etc/os-release",
+	"postCreateCommand": "git config --global user.name 'gtai' && git config --global user.email 'gtai.quant@gmail.com'",
 
 	// Configure tool-specific properties.
 	// "customizations": {},
